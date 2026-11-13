@@ -12,7 +12,7 @@
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
 body{background:var(--bg);color:var(--txt);font:14px/1.35 "Segoe UI",system-ui,-apple-system,sans-serif;overflow:hidden;user-select:none;-webkit-user-select:none;cursor:default}
-.wrap{display:inline-flex;gap:8px;align-items:stretch;padding:8px;width:max-content}
+.wrap{display:inline-flex;gap:8px;align-items:stretch;padding:8px;width:max-content;transform-origin:0 0}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px;min-width:0}
 #clockCard{flex:none;width:340px;display:flex;align-items:center;justify-content:center}
 #clockCard svg{width:100%;height:auto;display:block}
@@ -63,6 +63,7 @@ label{display:flex;flex-direction:column;gap:3px;color:var(--mut);font-size:12px
   <h3>Configuració</h3>
   <label>Segona zona horària (mà GMT)<select id="zoneSel"></select></label>
   <label>Festa local<select id="townSel"><option value="tgn">Tarragona</option><option value="reus">Reus</option></select></label>
+  <label>Mida del giny: <span id="scaleVal">75%</span><input type="range" id="scaleRng" min="50" max="150" step="5"></label>
   <div class="row"><button id="panelClose">Fet</button></div>
 </div>
 
@@ -98,18 +99,33 @@ function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
 var T = window.__TAURI__ || null, win = null;
 try{ if(T && T.window) win = T.window.getCurrentWindow(); }catch(e){ win = null; }
 
+var scale = parseFloat(lsGet("fwco.scale"));
+if(!(scale >= 0.5 && scale <= 1.5)) scale = 0.75;      /* mida per defecte: 75% */
+
+function setScale(v){
+  v = Math.max(0.5, Math.min(1.5, Math.round(v * 20) / 20));
+  scale = v;
+  lsSet("fwco.scale", String(v));
+  $("wrap").style.transform = "scale(" + v + ")";
+  var r = $("scaleRng"); if(r) r.value = Math.round(v * 100);
+  var t = $("scaleVal"); if(t) t.textContent = Math.round(v * 100) + "%";
+  fit();
+}
+
 var fitting = false;
 function fit(){                                  /* ajusta la finestra al contingut */
   if(!win || !T.dpi || fitting) return;
   fitting = true;
-  requestAnimationFrame(function(){
+  setTimeout(function(){                       /* no rAF: pot pausar-se si la finestra queda tapada */
     fitting = false;
     var w = $("wrap");
+    var ww = Math.ceil(w.offsetWidth * scale), hh = Math.ceil(w.offsetHeight * scale);
+    /* amb el panell obert la finestra no pot ser més petita que ell */
+    if($("panel").classList.contains("open")){ ww = Math.max(ww, 330); hh = Math.max(hh, 280); }
     try{
-      win.setSize(new T.dpi.LogicalSize(Math.ceil(w.offsetWidth), Math.ceil(w.offsetHeight)))
-         .catch(function(){});
+      win.setSize(new T.dpi.LogicalSize(ww, hh)).catch(function(){});
     }catch(e){}
-  });
+  }, 30);
 }
 
 function setupWindow(){
@@ -142,16 +158,25 @@ function setupWindow(){
     win.startDragging().catch(function(){});
   });
 
-  $("miCfg").addEventListener("click", function(){ hideCtx(); panel.classList.add("open"); });
+  $("miCfg").addEventListener("click", function(){ hideCtx(); panel.classList.add("open"); fit(); });
   $("miBottom").addEventListener("click", function(){
     bottom = !bottom; lsSet("fwco.bottom", bottom ? "1" : "0"); applyBottom(); hideCtx();
   });
   $("miClose").addEventListener("click", function(){
     if(win) win.close().catch(function(){}); else window.close();
   });
-  $("panelClose").addEventListener("click", function(){ panel.classList.remove("open"); });
+  var rng = $("scaleRng");
+  rng.addEventListener("input", function(){ setScale(parseInt(rng.value, 10) / 100); });
+  document.addEventListener("wheel", function(e){        /* Ctrl + roda = canvia la mida */
+    if(!e.ctrlKey) return;
+    e.preventDefault();
+    setScale(scale + (e.deltaY < 0 ? 0.05 : -0.05));
+  }, { passive: false });
+  setScale(scale);
+
+  $("panelClose").addEventListener("click", function(){ panel.classList.remove("open"); fit(); });
   document.addEventListener("keydown", function(e){
-    if(e.key === "Escape"){ hideCtx(); panel.classList.remove("open"); }
+    if(e.key === "Escape"){ hideCtx(); panel.classList.remove("open"); fit(); }
   });
 }
 
