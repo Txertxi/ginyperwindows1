@@ -1,0 +1,37 @@
+name: Compila FWCo Widget (Windows)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: Instal·la dependències
+        run: npm install
+
+      - name: Genera les icones a partir d'icon.png
+        run: npx tauri icon icon.png
+
+      - name: Compila (només l'executable, sense instal·lador)
+        run: npx tauri build --no-bundle
+
+      - name: Puja l'.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: fwco-widget-windows
+          path: src-tauri/target/release/fwco-widget.exe
