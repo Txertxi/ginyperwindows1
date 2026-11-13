@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FWCo Widget</title>
+<style>
+:root{
+  --bg:#0e1014; --panel:#15181e; --txt:#e8ebf0; --mut:#8a92a0; --line:#252a33;
+  --cE:#e5484d; --cC:#f2b705; --cB:#3b82f6; --cL:#2fb36b;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--txt);font:14px/1.35 "Segoe UI",system-ui,-apple-system,sans-serif;overflow:hidden;user-select:none;-webkit-user-select:none;cursor:default}
+.wrap{display:inline-flex;gap:8px;align-items:stretch;padding:8px;width:max-content}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px;min-width:0}
+#clockCard{flex:none;width:340px;display:flex;align-items:center;justify-content:center}
+#clockCard svg{width:100%;height:auto;display:block}
+#calCard{flex:none;width:340px;display:flex;flex-direction:column;gap:8px}
+.head{display:flex;align-items:center;gap:6px}
+.title{flex:1;font-weight:600;font-size:16px;text-transform:capitalize;text-align:center}
+button{font:inherit;color:var(--txt);background:transparent;border:1px solid var(--line);border-radius:4px;padding:2px 9px;cursor:pointer}
+button:hover{background:#1e232b}
+.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center}
+.dow{color:var(--mut);font-size:11px;text-transform:uppercase;padding:2px 0}
+.day{display:flex;align-items:center;justify-content:center;height:34px;border-radius:4px;font-size:14px}
+.day.out{opacity:.3}
+.day.today{outline:2px solid var(--txt);outline-offset:-2px}
+.day.hol{font-weight:700;color:#fff}
+.day.hE{background:var(--cE)}
+.day.hB{background:var(--cB)}
+.day.hL{background:var(--cL)}
+.day.hC{background:var(--cC);color:#1a1400}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--mut)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.ups{border-top:1px solid var(--line);padding-top:8px;display:flex;flex-direction:column;gap:3px;font-size:13px}
+.up{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.up i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px}
+.up b{color:var(--mut);font-weight:600;margin-right:6px}
+.none{color:var(--mut)}
+#panel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:var(--panel);border:1px solid #3a4150;border-radius:6px;padding:14px 16px;display:none;flex-direction:column;gap:10px;font-size:13px;z-index:5;min-width:280px;box-shadow:0 8px 30px rgba(0,0,0,.6)}
+#panel.open{display:flex}
+select{font:inherit;color:var(--txt);background:#0e1014;border:1px solid var(--line);border-radius:4px;padding:3px 6px}
+label{display:flex;flex-direction:column;gap:3px;color:var(--mut);font-size:12px}
+#ctx{position:fixed;display:none;min-width:190px;background:var(--panel);border:1px solid #3a4150;border-radius:6px;padding:4px;z-index:10;box-shadow:0 6px 20px rgba(0,0,0,.6);font-size:13px}
+#ctx.open{display:block}
+.mi{padding:6px 10px;border-radius:4px;cursor:pointer;white-space:nowrap}
+.mi:hover{background:#232834}
+.mi .chk{display:inline-block;width:16px;color:#2fb36b}
+.sep{height:1px;background:var(--line);margin:4px 2px}
+#panel h3{margin:0;font-size:14px}
+#panel .row{display:flex;justify-content:flex-end}
+</style>
+</head>
+<body>
+<div id="ctx" role="menu">
+  <div class="mi" id="miCfg">Configuració&hellip;</div>
+  <div class="mi" id="miBottom"><span class="chk" id="chk"></span>Sempre al fons</div>
+  <div class="sep"></div>
+  <div class="mi" id="miClose">Tanca el giny</div>
+</div>
+<div id="panel">
+  <h3>Configuració</h3>
+  <label>Segona zona horària (mà GMT)<select id="zoneSel"></select></label>
+  <label>Festa local<select id="townSel"><option value="tgn">Tarragona</option><option value="reus">Reus</option></select></label>
+  <div class="row"><button id="panelClose">Fet</button></div>
+</div>
+
+<div class="wrap" id="wrap">
+  <div class="card" id="clockCard">
+    <svg id="clock" viewBox="-200 -200 400 400" role="img" aria-label="Rellotge GMT"></svg>
+  </div>
+  <div class="card" id="calCard">
+    <div class="head">
+      <button id="prev" title="Mes anterior">&#8249;</button>
+      <div class="title" id="title"></div>
+      <button id="today" title="Tornar al mes actual">avui</button>
+      <button id="next" title="Mes següent">&#8250;</button>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div class="legend" id="legend"></div>
+    <div class="ups" id="ups"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+var $ = function(id){ return document.getElementById(id); };
+function pad(n){ return (n<10?"0":"")+n; }
+function ymd(d){ return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()); }
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+
+/* ================= FINESTRA (Tauri) =================
+   Sense Tauri (si s'obre al navegador) tot això simplement no fa res. */
+var T = window.__TAURI__ || null, win = null;
+try{ if(T && T.window) win = T.window.getCurrentWindow(); }catch(e){ win = null; }
+
+var fitting = false;
+function fit(){                                  /* ajusta la finestra al contingut */
+  if(!win || !T.dpi || fitting) return;
+  fitting = true;
+  requestAnimationFrame(function(){
+    fitting = false;
+    var w = $("wrap");
+    try{
+      win.setSize(new T.dpi.LogicalSize(Math.ceil(w.offsetWidth), Math.ceil(w.offsetHeight)))
+         .catch(function(){});
+    }catch(e){}
+  });
+}
+
+function setupWindow(){
+  var ctx = $("ctx"), panel = $("panel");
+  var bottom = lsGet("fwco.bottom") !== "0";     /* per defecte, al fons */
+
+  function paintChk(){ $("chk").textContent = bottom ? "\u2713" : ""; }
+  function hideCtx(){ ctx.classList.remove("open"); }
+  function applyBottom(){
+    paintChk();
+    if(win) win.setAlwaysOnBottom(bottom).catch(function(){});
+  }
+  applyBottom();
+
+  /* clic dret: menú propi */
+  document.addEventListener("contextmenu", function(e){
+    e.preventDefault();
+    ctx.classList.add("open");
+    var x = Math.min(e.clientX, window.innerWidth  - ctx.offsetWidth  - 4);
+    var y = Math.min(e.clientY, window.innerHeight - ctx.offsetHeight - 4);
+    ctx.style.left = Math.max(4, x) + "px";
+    ctx.style.top  = Math.max(4, y) + "px";
+  });
+
+  /* arrossegar la finestra des de qualsevol punt que no sigui un control */
+  document.addEventListener("mousedown", function(e){
+    if(!ctx.contains(e.target)) hideCtx();
+    if(e.button !== 0 || !win) return;
+    if(e.target.closest("button,select,label,input,#ctx,#panel")) return;
+    win.startDragging().catch(function(){});
+  });
+
+  $("miCfg").addEventListener("click", function(){ hideCtx(); panel.classList.add("open"); });
+  $("miBottom").addEventListener("click", function(){
+    bottom = !bottom; lsSet("fwco.bottom", bottom ? "1" : "0"); applyBottom(); hideCtx();
+  });
+  $("miClose").addEventListener("click", function(){
+    if(win) win.close().catch(function(){}); else window.close();
+  });
+  $("panelClose").addEventListener("click", function(){ panel.classList.remove("open"); });
+  document.addEventListener("keydown", function(e){
+    if(e.key === "Escape"){ hideCtx(); panel.classList.remove("open"); }
+  });
+}
+
+/* ================= FESTIUS =================
+   E = Estat, C = Catalunya, B = Barcelona (capital), L = local (4t camp = població)
+   2026: calendari oficial (Ordre EMT/66/2025 + festes locals EMT/208/2025).
+   2027: festius laborals oficials (Ordre EMT/52/2026). Les festes LOCALS de 2027
+   es publiquen cap al desembre de 2026: les dates d'aquí són provisionals
+   (les tradicionals de cada municipi). Es marquen també els festius que cauen en diumenge. */
+var HOL = [
+  ["2026-01-01","Cap d'Any","E"],
+  ["2026-01-06","Reis","E"],
+  ["2026-04-03","Divendres Sant","E"],
+  ["2026-04-06","Dilluns de Pasqua Florida","C"],
+  ["2026-05-01","Festa del Treball","E"],
+  ["2026-05-25","Segona Pasqua","B"],
+  ["2026-06-24","Sant Joan","C"],
+  ["2026-06-29","Sant Pere","L","reus"],
+  ["2026-08-15","L'Assumpció","E"],
+  ["2026-08-19","Sant Magí","L","tgn"],
+  ["2026-09-11","Diada Nacional de Catalunya","C"],
+  ["2026-09-23","Santa Tecla","L","tgn"],
+  ["2026-09-24","La Mercè","B"],
+  ["2026-09-25","Mare de Déu de la Misericòrdia","L","reus"],
+  ["2026-10-12","Festa Nacional d'Espanya","E"],
+  ["2026-11-01","Tots Sants","E"],
+  ["2026-12-06","Dia de la Constitució","E"],
+  ["2026-12-08","La Immaculada","E"],
+  ["2026-12-25","Nadal","E"],
+  ["2026-12-26","Sant Esteve","C"],
+
+  ["2027-01-01","Cap d'Any","E"],
+  ["2027-01-06","Reis","E"],
+  ["2027-03-26","Divendres Sant","E"],
+  ["2027-03-29","Dilluns de Pasqua Florida","C"],
+  ["2027-05-01","Festa del Treball","E"],
+  ["2027-05-17","Segona Pasqua","B"],
+  ["2027-06-24","Sant Joan","C"],
+  ["2027-06-29","Sant Pere","L","reus"],
+  ["2027-08-15","L'Assumpció","E"],
+  ["2027-08-19","Sant Magí","L","tgn"],
+  ["2027-09-11","Diada Nacional de Catalunya","C"],
+  ["2027-09-23","Santa Tecla","L","tgn"],
+  ["2027-09-24","La Mercè","B"],
+  ["2027-09-25","Mare de Déu de la Misericòrdia","L","reus"],
+  ["2027-10-12","Festa Nacional d'Espanya","E"],
+  ["2027-11-01","Tots Sants","E"],
+  ["2027-12-06","Dia de la Constitució","E"],
+  ["2027-12-08","La Immaculada","E"],
+  ["2027-12-25","Nadal","E"],
+  ["2027-12-26","Sant Esteve","C"]
+];
+var YEARS = [2026, 2027];
+var COL = { E:"#e5484d", C:"#f2b705", B:"#3b82f6", L:"#2fb36b" };
+var PRIO = ["E","C","B","L"];
+var TOWNS = { tgn:"Tarragona", reus:"Reus" };
+
+var MONTHS = ["gener","febrer","març","abril","maig","juny","juliol","agost","setembre","octubre","novembre","desembre"];
+var MSHORT = ["gen.","febr.","març","abr.","maig","juny","jul.","ag.","set.","oct.","nov.","des."];
+var DOW    = ["dl","dt","dc","dj","dv","ds","dg"];
+
+/* ================= ZONES HORÀRIES ================= */
+var ZONES = [
+  ["UTC","UTC"],
+  ["Europe/Madrid","BARCELONA"],
+  ["Europe/London","LONDON"],
+  ["America/New_York","NEW YORK"],
+  ["America/Chicago","CHICAGO"],
+  ["America/Los_Angeles","LOS ANGELES"],
+  ["America/Mexico_City","MÈXIC"],
+  ["America/Bogota","BOGOTÀ"],
+  ["America/Argentina/Buenos_Aires","BUENOS AIRES"],
+  ["America/Sao_Paulo","SÃO PAULO"],
+  ["Africa/Casablanca","CASABLANCA"],
+  ["Asia/Dubai","DUBAI"],
+  ["Asia/Kolkata","DELHI"],
+  ["Asia/Shanghai","SHANGHAI"],
+  ["Asia/Tokyo","TOKYO"],
+  ["Australia/Sydney","SYDNEY"],
+  ["Pacific/Auckland","AUCKLAND"]
+];
+
+var zone = lsGet("fwco.zone");
+if(!ZONES.some(function(z){ return z[0]===zone; })) zone = "UTC";
+var town = lsGet("fwco.town");
+if(!TOWNS[town]) town = "tgn";
+
+function zoneLabel(){
+  for(var i=0;i<ZONES.length;i++) if(ZONES[i][0]===zone) return ZONES[i][1];
+  return zone;
+}
+
+var fmtCache = {};
+function zoneParts(date, tz){
+  var f = fmtCache[tz];
+  if(!f){
+    f = fmtCache[tz] = new Intl.DateTimeFormat("en-GB",
+      { timeZone: tz, hourCycle: "h23", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }
+  var o = {};
+  f.formatToParts(date).forEach(function(p){ if(p.type!=="literal") o[p.type] = parseInt(p.value,10); });
+  return { h: o.hour % 24, m: o.minute, s: o.second };
+}
+
+/* ================= RELLOTGE (SVG) ================= */
+function P(r,deg){ var a=(deg-90)*Math.PI/180; return [r*Math.cos(a), r*Math.sin(a)]; }
+function f(n){ return n.toFixed(2); }
+
+function buildClock(){
+  var s = "", i, p, q;
+  s += '<defs><radialGradient id="dial" cx="50%" cy="45%" r="60%">'
+     + '<stop offset="0" stop-color="#23262d"/><stop offset="1" stop-color="#0a0b0e"/></radialGradient></defs>';
+  s += '<circle r="198" fill="#050506"/>';
+  s += '<circle r="194" fill="url(#dial)"/>';
+
+  /* anell fi: nit (blau) i dia (vermell) en escala de 24 h; 24 a dalt, 12 a baix */
+  s += '<circle r="187" fill="none" stroke="#1f5fd0" stroke-width="5"/>';
+  p = P(187,90); q = P(187,270);
+  s += '<path d="M'+f(p[0])+' '+f(p[1])+' A187 187 0 0 1 '+f(q[0])+' '+f(q[1])+'" fill="none" stroke="#d63a2f" stroke-width="5"/>';
+
+  /* xifres de 24 h (petites, cada 2 h) */
+  for(i=2;i<=24;i+=2){
+    p = P(169, i*15);
+    s += '<text x="'+f(p[0])+'" y="'+f(p[1])+'" text-anchor="middle" dominant-baseline="central" '
+       + 'font-family="Segoe UI, Arial, sans-serif" font-size="13" fill="#cfd3da">'+i+'</text>';
+  }
+
+  /* marques de minuts */
+  for(i=0;i<60;i++){
+    if(i%5===0) continue;
+    p = P(153, i*6); q = P(159, i*6);
+    s += '<line x1="'+f(p[0])+'" y1="'+f(p[1])+'" x2="'+f(q[0])+'" y2="'+f(q[1])+'" stroke="#7e8592" stroke-width="1"/>';
+  }
+
+  /* barres d'hora (a les 3 hi va la finestra de data) */
+  s += '<polygon points="0,-116 -10,-147 10,-147" fill="#f1f1ee"/>';
+  for(i=1;i<12;i++){
+    if(i===3) continue;
+    s += '<rect x="-4.5" y="-146" width="9" height="30" rx="1" fill="#f1f1ee" transform="rotate('+(i*30)+')"/>';
+  }
+
+  /* marca i zona */
+  s += '<text transform="translate(0,-70) scale(0.85,1.25)" text-anchor="middle" '
+     + 'font-family="Times New Roman, Georgia, serif" font-size="20" letter-spacing="3" fill="#e8e3d3">FWCo</text>';
+  s += '<text id="zoneTxt" x="0" y="84" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" '
+     + 'font-size="10" letter-spacing="2.5" fill="#aab1bd"></text>';
+
+  /* finestra de data: marc blanc fi, fons negre, xifres blanques */
+  s += '<rect x="100" y="-13" width="40" height="26" fill="#000" stroke="#fff" stroke-width="1.2"/>';
+  s += '<text id="dateTxt" x="120" y="1" text-anchor="middle" dominant-baseline="central" '
+     + 'font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="600" fill="#fff"></text>';
+
+  /* mans: GMT, hora, minut, segons (quars) */
+  s += '<g id="hGmt"><line x1="0" y1="18" x2="0" y2="-140" stroke="#ff6a3d" stroke-width="2.4"/>'
+     + '<polygon points="0,-166 -7.5,-142 7.5,-142" fill="#ff6a3d"/></g>';
+  s += '<g id="hHour"><polygon points="-5.5,14 -5.5,-62 0,-82 5.5,-62 5.5,14" fill="#f4f4f1" stroke="#0b0b0c" stroke-width="1"/>'
+     + '<rect x="-2.2" y="-60" width="4.4" height="40" fill="#bfe9c7"/></g>';
+  s += '<g id="hMin"><polygon points="-4.2,14 -4.2,-110 0,-130 4.2,-110 4.2,14" fill="#f4f4f1" stroke="#0b0b0c" stroke-width="1"/>'
+     + '<rect x="-1.6" y="-108" width="3.2" height="70" fill="#bfe9c7"/></g>';
+  s += '<g id="hSec"><line x1="0" y1="30" x2="0" y2="-152" stroke="#e9eef5" stroke-width="1.3"/>'
+     + '<circle cx="0" cy="-98" r="4.2" fill="#e9eef5"/></g>';
+  s += '<circle r="7" fill="#d8dbe0"/><circle r="2.5" fill="#111"/>';
+
+  $("clock").innerHTML = s;
+}
+
+function rot(id, deg){
+  var el = $(id);
+  if(el) el.setAttribute("transform", "rotate("+deg.toFixed(2)+")");
+}
+
+var lastKey = "";
+function tick(){
+  var now = new Date();
+  var h = now.getHours(), m = now.getMinutes(), s = now.getSeconds();
+
+  rot("hHour", ((h%12) + m/60 + s/3600) * 30);
+  rot("hMin",  (m + s/60) * 6);
+  rot("hSec",  s * 6);                       /* segons de quars: un salt per segon */
+
+  var z = zoneParts(now, zone);
+  rot("hGmt",  (z.h + z.m/60 + z.s/3600) * 15);   /* 24 h = 360 graus */
+
+  $("dateTxt").textContent = now.getDate();
+  $("zoneTxt").textContent = zoneLabel();
+
+  var key = ymd(now);
+  if(key !== lastKey){                          /* canvi de dia: refresca el calendari */
+    lastKey = key;
+    vy = now.getFullYear(); vm = now.getMonth();
+    renderCal();
+  }
+  setTimeout(tick, 1000 - now.getMilliseconds() + 5);
+}
+
+/* ================= CALENDARI ================= */
+var vy = new Date().getFullYear(), vm = new Date().getMonth();
+var byDate = {};
+
+function buildIndex(){
+  byDate = {};
+  HOL.forEach(function(h){
+    if(h[2]==="L" && h[3]!==town) return;
+    (byDate[h[0]] = byDate[h[0]] || []).push({ n:h[1], c:h[2] });
+  });
+}
+
+function prioSort(a,b){ return PRIO.indexOf(a.c) - PRIO.indexOf(b.c); }
+
+function renderCal(){
+  buildIndex();
+  var today = new Date(), todayKey = ymd(today);
+  $("title").textContent = MONTHS[vm] + " " + vy;
+
+  var first = new Date(vy, vm, 1);
+  var offset = (first.getDay() + 6) % 7;        /* setmana de dilluns a diumenge */
+  var html = "", i;
+  for(i=0;i<7;i++) html += '<div class="dow">'+DOW[i]+'</div>';
+
+  for(i=0;i<42;i++){
+    var d = new Date(vy, vm, 1 - offset + i);
+    var key = ymd(d);
+    var hs = (byDate[key] || []).slice().sort(prioSort);
+    var cls = "day";
+    var style = "";
+    var tip = "";
+    if(d.getMonth() !== vm) cls += " out";
+    if(key === todayKey) cls += " today";
+    if(hs.length){
+      cls += " hol h" + hs[0].c;
+      var cats = [];
+      hs.forEach(function(h){ if(cats.indexOf(h.c)<0) cats.push(h.c); });
+      if(cats.length > 1) style = ' style="box-shadow:inset 0 -4px 0 '+COL[cats[1]]+'"';
+      tip = ' title="'+hs.map(function(h){ return h.n; }).join(" · ").replace(/"/g,"&quot;")+'"';
+    }
+    html += '<div class="'+cls+'"'+style+tip+'>'+d.getDate()+'</div>';
+  }
+  $("grid").innerHTML = html;
+
+  var lg = '<span><i style="background:'+COL.E+'"></i>Estat</span>'
+         + '<span><i style="background:'+COL.C+'"></i>Catalunya</span>'
+         + '<span><i style="background:'+COL.B+'"></i>Barcelona</span>'
+         + '<span><i style="background:'+COL.L+'"></i>Local · '+TOWNS[town]+'</span>';
+  if(YEARS.indexOf(vy) < 0) lg += '<span>(sense dades de festius d\'aquest any)</span>';
+  $("legend").innerHTML = lg;
+
+  renderUpcoming(today);
+  fit();
+}
+
+function renderUpcoming(today){
+  var t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  var lim = new Date(t0.getFullYear(), t0.getMonth()+1, t0.getDate());
+  if(lim.getMonth() !== (t0.getMonth()+1) % 12) lim = new Date(t0.getFullYear(), t0.getMonth()+2, 0);
+
+  var found = [], d = new Date(t0);
+  while(d <= lim && found.length < 2){
+    var hs = (byDate[ymd(d)] || []).slice().sort(prioSort);
+    for(var k=0;k<hs.length && found.length<2;k++) found.push({ d:new Date(d), n:hs[k].n, c:hs[k].c });
+    d = new Date(d.getFullYear(), d.getMonth(), d.getDate()+1);
+  }
+
+  var out = "";
+  found.forEach(function(x){
+    var diff = Math.round((x.d - t0) / 864e5);
+    var lab = diff===0 ? "avui" : diff===1 ? "demà"
+            : DOW[(x.d.getDay()+6)%7] + " " + x.d.getDate() + " " + MSHORT[x.d.getMonth()];
+    out += '<div class="up"><i style="background:'+COL[x.c]+'"></i><b>'+lab+'</b>'+x.n+'</div>';
+  });
+  if(!out) out = '<div class="up none">Cap festiu en el proper mes</div>';
+  $("ups").innerHTML = out;
+}
+
+function shift(n){
+  vm += n;
+  if(vm < 0){ vm = 11; vy--; }
+  if(vm > 11){ vm = 0; vy++; }
+  renderCal();
+}
+
+/* ================= CONFIGURACIÓ I VISTES ================= */
+function init(){
+  var zs = $("zoneSel");
+  ZONES.forEach(function(z){
+    var o = document.createElement("option");
+    o.value = z[0];
+    o.textContent = z[0]==="UTC" ? "UTC" : z[1].charAt(0) + z[1].slice(1).toLowerCase();
+    if(z[0]===zone) o.selected = true;
+    zs.appendChild(o);
+  });
+  $("townSel").value = town;
+
+  zs.addEventListener("change", function(){
+    zone = zs.value; lsSet("fwco.zone", zone); tickNow();
+  });
+  $("townSel").addEventListener("change", function(){
+    town = $("townSel").value; lsSet("fwco.town", town); renderCal();
+  });
+  $("prev").addEventListener("click", function(){ shift(-1); });
+  $("next").addEventListener("click", function(){ shift(1); });
+  $("today").addEventListener("click", function(){
+    var n = new Date(); vy = n.getFullYear(); vm = n.getMonth(); renderCal();
+  });
+
+  setupWindow();
+  buildClock();
+  tick();
+}
+
+/* aplica un canvi de zona de seguida, sense esperar el proper segon */
+function tickNow(){
+  var now = new Date(), z = zoneParts(now, zone);
+  rot("hGmt", (z.h + z.m/60 + z.s/3600) * 15);
+  $("zoneTxt").textContent = zoneLabel();
+}
+
+init();
+})();
+</script>
+</body>
+</html>
